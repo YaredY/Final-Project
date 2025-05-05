@@ -1,0 +1,33 @@
+---
+title: "Early Detection of Coronary Heart Disease Risk Using Supervised Machine Learning: 
+         A Predictive Model Selection Approach"
+author: "Yared Abraha"
+date: "2025-02-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
