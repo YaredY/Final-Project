@@ -10,7 +10,40 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## Final Project Machine Learning Model Development Workflow
+```{r}
+# Final Project Machine Learning Model Development Workflow
+# Data set used: Framingham Heart Study Data set 
+# Step 1: Exploratory Data Analysis (EDA)
+# -Understanding the data structure and distribution 
+# 1.1 Explore the data set and data types 
+# -Perform metadata operation to make the data suitable for further analysis
+# 1.2 Explore Issues in the Data 
+# -Check for duplicates 
+# -Check for missing values 
+# -Check for distribution of the target variable
+# -Explore to detect the presence of outliers(extreme values) 
+# 1.3 Data Analysis 
+# -Descriptive Statistics (summary statistics of features)
+# -Univariate Analysis (distribution of features) 
+# -Bivariate Analysis (relationship between features and target)
+# -Multivariate Analysis (relationship between multiple features)
+# Step 2: Splitting the data set and Data Preparation for Modeling 
+# 2.1 Split the data set (training/validation/testing)
+# 2.2 Data Cleaning (Handling missing values)
+# 2.3 Data Pre-processing 
+# -Handling outliers
+# -Handling target imbalance
+# Step 3: Model Development 
+# -Train model using training Set
+# -Evaluate model using validation Set
+# -Hyperparameter tuning (Cross Validation)
+# -Retrain model with best hyperparameters found (class weights)
+# Step 4: Model Evaluation 
+# -Evaluate model using testing set 
+# -Compare models and select the best model using appropriate metrics
+
+```
 
 
 
@@ -26,8 +59,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+
+```{r}
+# End of page
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
