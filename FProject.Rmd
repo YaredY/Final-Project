@@ -14,10 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 # Final Project Machine Learning Model Development Workflow
 # Data set used: Framingham Heart Study Data set 
+# --Load the Framingham heart study data set into R
 # Step 1: Exploratory Data Analysis (EDA)
-# -Understanding the data structure and distribution 
+# -- EDA help understand the data structure, issues in the data, and distributions 
 # 1.1 Explore the data set and data types 
-# -Perform metadata operation to make the data suitable for further analysis
+# --Perform data/features metadata operation to make the data suitable for further analysis
 # 1.2 Explore Issues in the Data 
 # -Check for duplicates 
 # -Check for missing values 
@@ -45,8 +46,101 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```
 
+# Load Libraries and Framingham data set
+```{r}
+# Libraries for clean Exploratory Data Analysis (EDA)
+# Using tidyverse and ggplot2 for clean data analysis
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(tibble)
+# Load the Framingham data set into R using tidyverse readr 
+framingham_original <- readr::read_csv("data/framingham_data.csv", show_col_types = FALSE)  
 
+# keep the copy of the original data set to use it later (if needed) 
+framing_data1 <- framingham_original
 
+```
+
+# Step1: Exploratory Data Analysis (EDA)
+# 1.1 Explore the data set and data types
+```{r}
+## Step1: Exploratory Data Analysis (EDA)
+# --Understand the Data structure of the Framingham heart study data set 
+# 1.1 Explore the data set and data types
+# Display the first fifteen rows of the data set 
+head(framingham_original, n = 15)
+# Display the full data set on a new window
+View(framingham_original)
+
+```
+
+```{r}
+# Explore number of rows and columns of the data set
+cat("Total Rows:", nrow(framingham_original), "|Features(Predictors):", ncol(framingham_original) -1, 
+    "|Target Variable(Predicted):", names(framingham_original)[ncol(framingham_original)], "\n")
+# Column names of the data set 
+names(framingham_original)
+```
+```{r}
+# Summary statistics to explore correctness and spot issues
+summary(framingham_original)
+```
+# Explore the data types
+```{r}
+# Check the data types of features (predictors) and target (predicted) 
+glimpse(framingham_original)
+
+```
+```{r}
+# Data/features metadata operation to make the data suitable for further analysis
+# Change column names into appropriate, short, and easy to display names
+# Use the copied data to keep the original safe (untouched)
+framing_data1 <- framing_data1 %>% # using pip operator to chain operations and automate change of column name 
+  rename(
+    gender = male, # male is inappropriate (change it to gender)
+    stroke = prevalentStroke, # stroke is shorter and explanatory
+    hypertension = prevalentHyp, # hypertension is short and explanatory
+    CHDRisk = TenYearCHD # the aim of the project is to detect CHD risk earlier
+  )
+# Display the updated column names 
+names(framing_data1)  
+
+```
+
+```{r}
+# Identify which features are numeric and which are categorical  
+# Using Pip operator to chain operations and determine number of unique values of the features
+framing_data1 %>%
+  summarise(across(everything(), ~ n_distinct(.))) %>% # count number of unique values across rows
+  pivot_longer(everything(), names_to = "Features", # display column name 1 and list of features
+               values_to = "Number_Of_Unique_Values") %>%  # display column name 2 and number of unique values
+  arrange(Number_Of_Unique_Values)
+
+```
+
+```{r}
+# Determine between numeric and categorical features 
+framing_data1 %>% # pip operator to chain functions 
+  summarise(across(everything(), ~ n_distinct(.))) %>% # count unique values
+  pivot_longer(everything(), names_to = "Features", # dispaly all features
+               values_to = "Number_Of_Unique_Values") %>%  # count of unique values
+         mutate(
+           Variable_Type = ifelse(Number_Of_Unique_Values <= 5, "Categorical", # from previous analysis we know 5 is max 
+           "Numeric")
+           )%>%
+  arrange(Variable_Type, Number_Of_Unique_Values)
+
+```
+
+```{r}
+# Change categorical features into Factor for accurate analysis and interpretation 
+# Prepare features for proper plotting and modeling
+framing_factored <- framing_data1 %>% # keep the updated data set on new variable framing_factored
+  mutate(across(where(~ n_distinct(.) <= 5), as.factor)) # change variables with 5 or less unique values into factor
+str(framing_factored)
+
+```
 
 
 
