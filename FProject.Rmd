@@ -23,7 +23,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # -Check for duplicates 
 # -Check for missing values 
 # -Check for distribution of the target variable
-# -Explore to detect the presence of outliers(extreme values) 
+# -Check for outliers(extreme values) 
 # 1.3 Data Analysis 
 # -Descriptive Statistics (summary statistics of features)
 # -Univariate Analysis (distribution of features) 
@@ -133,6 +133,7 @@ framing_data1 %>% # pip operator to chain functions
 
 ```
 
+# Change categorical features into Factor
 ```{r}
 # Change categorical features into Factor for accurate analysis and interpretation 
 # Prepare features for proper plotting and modeling
@@ -142,12 +143,114 @@ str(framing_factored)
 
 ```
 
+# 1.3 Explore issues in the data
+```{r}
+# 1.3 Explore issues in the data
+# Check for duplicates 
+any(duplicated(framing_factored))
+
+```
+# Check for Missing Values
+```{r}
+# Check for number and proportion of missing value in each column(feature)
+# Using tibble object enframe for a clean output 
+missing_per_feature <- enframe(colSums(is.na(framing_factored)),
+                           name = "Feature",
+                           value = "Number_of_Missing_Values")  %>% 
+  mutate(Percentage_Per_Column = paste0(round((Number_of_Missing_Values / nrow(framing_factored)) * 100, 1), "%")) 
+ print(missing_per_feature)
+
+# Calculate percentage(proportion) of missing value per row
+missing_row_proportion <- paste0(round(rowMeans(is.na(framing_factored))  * 100, 1), "%")
+# Create a summary table of how many times each row proportion appears 
+missing_per_row <- table(missing_row_proportion) %>% 
+  as.data.frame() %>% # display it as a data frame
+  rename(Missing_Row_Percentage = missing_row_proportion, Total_Number = Freq) %>% # frequency count gives total number  
+  mutate(Percentage_of_Total_Rows = paste0(round((Total_Number / nrow(framing_factored)) * 100, 1), "%"))
+
+print(missing_per_row)
+# LOATS OF MISSING VALUES ARE FOUND!(Needs to be handled later on!)
+```
+
+# Check for distribution of the Target Variable(CHDRisk)
+```{r}
+# Check the distribution of the Target Variable
+# To measure if there exist a class imbalance 
+framing_factored %>% 
+  count(CHDRisk) %>%
+  mutate(Percentage = paste0(round(n/sum(n) * 100), "%")) 
+
+```
 
 
+```{r}
+# Barplot showing the distribution of target variable CHDRisk
+framing_factored %>% 
+  count(CHDRisk) %>% # count number of 0s and 1s
+  mutate(Percent = paste0(round(n/sum(n) * 100, 1)), # mutate calculate percentage of distribution
+         CHDRisk = factor(CHDRisk, levels = c(0,1), labels = c("NoRisk", "HighRisk"))) %>% # change 0,1 labels to words
+  ggplot(aes(x = CHDRisk, y = n, fill = CHDRisk)) + # ggplot assign x and y values and a legend (CHDRisk)
+  geom_col(width = 0.5) + 
+  geom_text(aes(label = paste0(n, " (", Percent, "%)")), vjust = -0.2, size = 3.5) + # display percentage on bars
+  scale_fill_manual(values = c("skyblue", "brown"))+ # adjust color of the bars
+  labs(title = "Distribution of Target Variable (CHDRisk)", x = "CHDRisk", y = "Count") +
+  theme_minimal() # clean background for clear display
 
+# THERE IS AHUGE CLASS IMBALANCE FOUND 0(NoRisk = 84.8%) and 1(HighRisk = 15.2%)
+```
+# Check for outliers(extreme values)
+```{r}
+# Check for outliers in the numeric features using a box plot
+framing_factored %>% # explore through the whole data set
+  select(where(is.numeric)) %>% # select only numeric features
+  pivot_longer(everything()) %>% # include all data points and keep them in a long format
+  ggplot(aes(x = "", y = value)) + # plot 
+  geom_boxplot(fill = "skyblue") + # the box plot color is set to be sKyblue
+  facet_wrap(~name, scales = "free") + # produce a grid display where all features and their outliers are displayed 
+  theme_minimal() # clear background
+# THERE ARE A LOT OF OUTLIERS IN ALL NUMERIC FEATURES EXCEPT AGE!
+# NEEDS TO BE HANDLED LATER ON!
 
+```
+```{r}
+# IQR method to compute outlier thresholds (computed for each features, glucose is considered here)
+first_quartile <- quantile(framing_factored$glucose, 0.25, na.rm = TRUE) # the median of the lower half of the data
+third_quartile <- quantile(framing_factored$glucose, 0.75, na.rm = TRUE) # the median of the upper half of the data
+interquartile_range <- third_quartile - first_quartile # measure the mid spread of the data
+# calculate lower and upper thresholds
+lower_threshold <- first_quartile - 1.5 * interquartile_range # any value smaller than this is an outlier
+upper_threshold <- third_quartile + 1.5 * interquartile_range # any value greater than this is an outlier
 
+# Draw box plot to visually see the outliers 
+# Detecting outliers in glucose
+ggplot(framing_factored, aes(x = "", y = glucose)) + # extract glucose and count of glucose represent the y axis
+  geom_boxplot(fill = "skyblue") + # the box plot is filled skyblue color
+  geom_hline(yintercept = lower_threshold, linetype = "dashed", color = "red") + # draw the lower threshold 
+  geom_hline(yintercept = upper_threshold, linetype = "dashed", color = "red") + # draw the upper threshold 
+  labs(title = "Boxpot with red dashed outlier threshold to detect outliers in glucose") +
+  theme_minimal()
 
+```
+
+```{r}
+# Calculate number and percentage of outliers in the numeric features 
+framing_factored %>%
+  select(where(is.numeric)) %>% # select only numeric features
+  # select all columns and summarise to rows
+  summarise(across(everything(), ~{    # (~/tidle in R) operator introduce function to be applied on each feature
+    first_q <- quantile(.x, 0.25, na.rm = TRUE) # na.rm = TRUE ignores the NA (misisng) values 
+    third_q <- quantile(.x, 0.75, na.rm = TRUE)
+    interquartile_r <- third_q - first_q 
+    lower_thr <- first_q - 1.5 * interquartile_r
+    upper_thr <- third_q + 1.5 * interquartile_r
+    # for each feature (.x) count values that are less than the lower bound and or greater than the upper bound
+    sum(.x < lower_thr | .x > upper_thr, na.rm = TRUE) # .x represent current value (feature) explored
+  })) %>%
+  pivot_longer(everything(), names_to = "Features", # converts to longer format and output column name
+               values_to = "Number_Of_Outliers") %>% # output column name
+  mutate(Percentage = round(Number_Of_Outliers / nrow(framing_factored), 3)) # percentage of outliers per feature
+
+```
 
 
 
