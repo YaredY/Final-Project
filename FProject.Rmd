@@ -501,8 +501,39 @@ ggplot(long_matrix, aes(x = Var1, y = Var2, fill = V)) + # Cramer's V value fill
 
 ```
 
+# Step 2: Splitting the data set and data preparation for modeling
+```{r}
+# 2.1 Splitting the data set 
+# Proportion: training set 70% /validation set 15%/ testing set 15%
+library(rsample)
+set.seed(123)
+
+# Step 1: initial split 70% training 30% (validation + testing set)
+# Use stratified sampling to balance the target (CHDRisk) distribution across sets
+# Dealing with difficult imbalanced data
+first_split <- initial_split(framing_factored, prop = 0.7, strata = CHDRisk)
+train_framing <- training(first_split)
+valid_and_test <- testing(first_split)
+
+# Step 2: from valid_and_test, split 15% validation set, 15% testing set
+second_split <- initial_split(valid_and_test, prop = 0.5, strata = CHDRisk)
+valid_framing <- training(second_split)
+test_framing <- testing(second_split)
+
+# Check the split data sizes 
+cat("Training Set:", nrow(train_framing), "\nValidation Set:", nrow(valid_framing), "\nTesting Set:", nrow(test_framing), "\n")
+# Compare: original data size should be equal to the sum of the splits (training + validation + testing) 
+nrow(framing_factored)
+# Check distribution and size: target (CHDRisk) should be proportional for all sets)
+table(train_framing$CHDRisk) / nrow(train_framing)
+table(valid_framing$CHDRisk) / nrow(valid_framing)
+table(test_framing$CHDRisk) / nrow(test_framing)
+
+```
+```{r}
 
 
+```
 
 
 
