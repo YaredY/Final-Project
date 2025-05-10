@@ -34,6 +34,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # 2.2 Data Cleaning (Handling missing values)
 # 2.3 Data Pre-processing 
 # -Handling outliers
+# -Feature selection
 # -Handling target imbalance
 # Step 3: Model Development 
 # -Train model using training Set
@@ -41,7 +42,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # -Cross Validation + Hyperparameter tuning 
 # -Retrain model with best Hyperparameters found 
 # Step 4: Model Evaluation 
-# -Evaluate model using testing set 
+# -Final model evaluation using testing set 
 # -Compare models and select the best model using appropriate metrics
 
 ```
@@ -530,10 +531,249 @@ table(valid_framing$CHDRisk) / nrow(valid_framing)
 table(test_framing$CHDRisk) / nrow(test_framing)
 
 ```
+# 2.2 Data Cleaning 
+# Hnadling missing values
+# Identify missingness mechanism
 ```{r}
-
+# 2.2 Data Cleaning 
+# Handling Missing Values (training set)
+# First identify mechanisms of missing data in numeric features using Logistic Regression
+# Check for Missing Completely At Random (MCAR), 
+# Missing At Random (MAR) 
+# Missing Not At Random (MNAR) 
+library(purrr) # for map function
+# Numeric features with missing values
+numeric_f_missing <- train_framing %>% select(where(is.numeric)) %>% # select numeric features
+  select(where(~ any(is.na(.)))) %>% names() # numeric features with missing (NA) values
+# Predictors: numeric features with no missing 
+numeric_f_complete <- train_data1 %>% select(where(is.numeric)) %>% select(where( ~ all(!is.na(.))))
+# Logistic regression to determine missing mechanism
+numeric_missing_values <- map_df(numeric_f_missing, function (y){ # return numeric missing values and missing mechanism
+  data_f <- data.frame(Missing = is.na(train_framing[[y]]), # create data frame for the model
+                   numeric_f_complete)
+  if (length(unique(data_f$Missing)) < 2) return(NULL)
+  glm_mod <- glm(Missing ~., data = data_f, family = "binomial") # logistic regression model
+  p_val_f <- summary(glm_mod)$coefficients [-1, 4] # extract the p_values from the model
+  # Create a tibble for output
+  tibble(
+   Features = y, # y is numeric features with mising (NA) values
+   Predictors = names(p_val_f), # all predictors for each feature
+   P_values = round(p_val_f, 3),
+   Missing_Mechanism = ifelse(min(p_val_f, na.rm = TRUE) > 0.05, "MCAR", "MAR") # Pp_val > 0.05(MCAR), < 0.05(MAR)
+ )
+} )
+# print features and their identified missing mechanism 
+print(numeric_missing_values)
+# Note: output shows all features shows MCAR, except BMI(which is MAR)
 
 ```
+
+```{r}
+# Chi-squared test to diagnose MCAR/MAR in categorical features
+# Extract categorical features (column)
+categorical_f <- train_framing %>% select(where(is.factor)) %>% select(-CHDRisk)
+# Feature with missing value 
+f_withNA <- categorical_f %>% select(where(~ any(is.na(.))))
+# Features without missing values
+f_noNA <- categorical_f %>% select(where(~ all(!is.na(.))))
+# chi-squared test result 
+map_dfr(names(f_withNA), function(var){
+  missing_f  <- is.na(f_withNA[[var]])
+  
+  map_dfr(names(f_noNA), function(predictor) {
+    table_m <- table(missing_f, f_noNA[[predictor]])
+    test_chisqr <- tryCatch(chisq.test(table_m), error = function(e) NULL) # calculate chi2-square 
+    # Tibble for clean output 
+    tibble(
+      Features = var,
+      Predictors = predictor,
+      P_value = round(test_chisqr$p.value, 3), # round to 3decimal places
+      Missing_Mechanism = ifelse(is.null(test_chisqr), NA,
+                                ifelse(test_chisqr$p.value > 0.05, "MCAR", "MAR")) # p_val > 0.05(MCAR), < 0.05(MAR)
+    )
+  })
+})
+# Note: output shows all categorical features have MCAR missing mechanism
+
+```
+
+# Now missing mechanism is known (Next Imputation)
+# Calculate imputation value only using the training data 
+# Impute validation and testing set using calculated value using training set (avoids DATA LEAKAGE)
+```{r}
+# Handling the missing values (using IMPUTATION)
+# Numeric features with MCAR missing mechanism (totChol, heartRate, glucose, cigsPerDay)
+# Impute using MEDIAN (robust against outliers)
+# Calculate median only using the training data and impute validation and testing set using median(avoids DATA LEAKAGE)
+# Copy and keep the original training data 
+train_Fimputed <- train_framing
+
+# Calculate median for each numeric feature 
+median_totChol1 <- median(train_framing$totChol, na.rm = TRUE) # ignore NA values
+median_heartRate1 <- median(train_framing$heartRate, na.rm = TRUE)
+median_glucose1 <- median(train_framing$glucose, na.rm = TRUE)
+
+# CigsPerDay should be computed for currentSmokers only
+median_cigsPerDay1 <- train_framing %>%
+  filter(currentSmoker == 1, !is.na(cigsPerDay)) %>% # only current smokers smoke cigarette 
+  summarise(median_cigarette = median(cigsPerDay)) %>% # compute the median
+  pull(median_cigarette) # extract median value
+
+# Impute missing values (NA) in each feature in the training set using mutate from tidyverse package
+train_Fimputed <- train_Fimputed %>%
+  mutate(
+    cigsPerDay = ifelse(is.na(cigsPerDay), median_cigsPerDay1, cigsPerDay),
+    totChol = ifelse(is.na(totChol), median_totChol1, totChol),
+    heartRate = ifelse(is.na(heartRate), median_heartRate1, heartRate),
+    glucose = ifelse(is.na(glucose), median_glucose1, glucose)
+  )
+# print the medians to investigate
+print(median_cigsPerDay1)
+print(median_totChol1)
+print(median_heartRate1)
+print(median_glucose1)
+
+```
+
+```{r}
+# Numeric feature with MAR missing mechanism is BMI 
+# Impute using K-Nearest Neighbor (KNN) median imputation for MAR mechanism
+# Assign the target missing MAR feature 
+feature_MAR <- "BMI"
+# Select numeric features (predictors) with no missing values
+features_noNA <- train_framing %>%
+  select(where(is.numeric), -all_of(feature_MAR)) %>% # select all numeric except BMI
+  select(where(~ !any(is.na(.)))) %>% # select all features with no missing values
+  names()
+# scale features to use as predictors in KNN 
+scaled_F <- train_Fimputed %>%
+  mutate(across(all_of(features_noNA), scale)) 
+
+# calculate one KNN based median imputation value 
+knn_median_value1 <- scaled_F %>% # used the scaled value
+  filter(!is.na(.data[[feature_MAR]])) %>% # filter features with no mising values
+  mutate(dist_to_missing = rowSums((select(.,all_of(features_noNA))- colMeans(scaled_F[is.na(scaled_F[[feature_MAR]]),features_noNA], na.rm = TRUE))^2)) %>% # calculate distance (knn)
+  arrange(dist_to_missing) %>% # distance calculated is arranged 
+  slice_head() %>%
+  pull({{feature_MAR}}) %>% # extract BMI 
+  median(na.rm = TRUE) %>% # median ignoring NA
+  as.numeric()
+
+# Impute BMI missing value(NAs) in the training set using the KNN median computed
+train_Fimputed <- train_Fimputed %>%
+  mutate(
+    BMI = ifelse(is.na(BMI), knn_median_value1, BMI))
+
+# print to check results
+print(features_noNA)
+print(knn_median_value1)
+str(train_Fimputed)
+
+```
+
+
+```{r}
+# Impute categorical features (education and BPMeds) with MCAR mechanism
+# MCAR missing mechanism, using mode imputation
+# Compute mode for the two features
+mode_education1 <- as.numeric(names(which.max(table(train_Fimputed$education, useNA = "no"))))
+mode_BPMeds1 <- as.numeric(names(which.max(table(train_Fimputed$BPMeds, useNA = "no"))))
+
+# Impute missing values(NAs) in the training set with the mode
+train_Fimputed <- train_Fimputed %>%
+  mutate(
+    education = case_when(is.na(education) ~ factor(mode_education1, levels = levels(education)),
+                          TRUE ~ education),
+    BPMeds = case_when(is.na(BPMeds) ~ factor(mode_BPMeds1, levels = levels(BPMeds)),
+                       TRUE ~ BPMeds)
+  )
+
+print(mode_education1)
+print(mode_BPMeds1)
+
+```
+
+```{r}
+# Check the imputation done on the training set
+# Display features, missing values count, and data type
+imputed_train1 <- train_Fimputed %>% # function aplied on the training data set 
+  summarise(across(everything(), ~ sum(is.na(.)))) %>% # add all missing values (if any) 
+  pivot_longer(everything(), names_to = "Feature", values_to = "Missing_Count") %>% # output columns assigned with longer
+  mutate(Data_Type = sapply(train_Fimputed[, Feature], class)) # mutate to assign data type values for each feature
+
+# print imputation result (there should be 0 missing value in the training set)
+print(imputed_train1)
+
+```
+
+# Impute validation and testing set
+```{r}
+# Now clean(handle missing values)in the validation and testing set 
+# Using the medians, KNN median, and mode calculated using the training set to avoid data leakage
+# Impute the validation set 
+valid_Fimputed <- valid_framing # keep a copy of the original validation set
+# Just impute using values from the training imputation
+# mutate to change NAs with calculated median/mode in each features with missing values
+valid_Fimputed <- valid_Fimputed %>%
+  mutate(
+    cigsPerDay = ifelse(is.na(cigsPerDay), median_cigsPerDay1, cigsPerDay),
+    totChol = ifelse(is.na(totChol), median_totChol1, totChol),
+    heartRate = ifelse(is.na(heartRate), median_heartRate1, heartRate),
+    glucose = ifelse(is.na(glucose), median_glucose1, glucose),
+    BMI = ifelse(is.na(BMI), knn_median_value1, BMI),
+    education = case_when(is.na(education) ~ factor(mode_education1, levels = levels(education)),
+                          TRUE ~ education),
+    BPMeds = case_when(is.na(BPMeds) ~ factor(mode_BPMeds1, levels = levels(BPMeds)),
+                       TRUE ~ BPMeds)
+  )
+
+# Impute the testing set
+test_Fimputed <- test_framing # keep a copy of the original testing set
+# Just impute using values from the training imputation
+# mutate to change NAs with calculated median/mode in each features with missing values
+test_Fimputed <- test_Fimputed %>%
+  mutate(
+    cigsPerDay = ifelse(is.na(cigsPerDay), median_cigsPerDay1, cigsPerDay),
+    totChol = ifelse(is.na(totChol), median_totChol1, totChol),
+    heartRate = ifelse(is.na(heartRate), median_heartRate1, heartRate),
+    glucose = ifelse(is.na(glucose), median_glucose1, glucose),
+    BMI = ifelse(is.na(BMI), knn_median_value1, BMI),
+    education = case_when(is.na(education) ~ factor(mode_education1, levels = levels(education)),
+                          TRUE ~ education),
+    BPMeds = case_when(is.na(BPMeds) ~ factor(mode_BPMeds1, levels = levels(BPMeds)),
+                       TRUE ~ BPMeds)
+  )
+
+```
+
+
+```{r}
+# Check the imputation done on the validation set
+# Display features, missing values count, and data type
+imputed_val1 <- valid_Fimputed %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Missing_Count") %>%
+  #filter(Missing_Count > 0) %>% # display features with missing values only
+  mutate(Data_Type = sapply(train_imputed[, Variable], class))
+
+# Ckeck imputation done on the test set
+imputed_test1 <- test_Fimputed %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Missing_Count") %>%
+  #filter(Missing_Count > 0) %>% # display features with missing values only
+  mutate(Data_Type = sapply(train_imputed[, Variable], class))
+
+# Print imputed results to show missing values (all features should display 0 missing values)
+print(imputed_val1)
+print(imputed_test1)
+
+```
+
+
+
+
+
+
 
 
 
