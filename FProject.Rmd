@@ -429,7 +429,7 @@ framing_factored %>%
 
 ```{r}
 # Measure of multicollinearity (Variance Inflation Factor (VIF)
-# fucntion to calculate VIF across all numeric features
+# function to calculate VIF across all numeric features
 variance_inflation_factor <- function(dataset) { # function takes the framing factored data
   numeric_features <- dataset %>% select (where(is.numeric)) # select numeric features from the data set passed
   vif_values <- map_dfr(names(numeric_features),function(var) {
@@ -448,8 +448,58 @@ print(vif_values)
 ```
 
 
+```{r}
+# Cramer's V to measure relationship between categorical features
+# Similar to correlation matrix for numeric features
+# Select categorical features from the data set 
+categorical_features <- framing_factored %>%
+  select(where(is.factor), -CHDRisk)
+# Extract names of categorical features
+feature_names <- names(categorical_features)
+# Function to calculate Cramer's V between two categorical features 
+crm_value <- function(a,b) {
+  contingency_table <- table(a,b) # contingency table for chi square test
+  chi2_test <- chisq.test(contingency_table, correct = FALSE)$statistic # chi square values calculated
+  tot_observation <- sum(contingency_table) # number of data points 
+  phi_squared <- chi2_test / tot_observation # phi squared calculated
+  smaller <- min(nrow(contingency_table), ncol(contingency_table)) # extract smaller count across rows and column from ct
+  sqrt(as.numeric(phi_squared)/ (smaller -1)) # Cramer's V calculated
+}
+# Create a matrix to store the calculated Cramer's V 
+cr_matrix <- matrix(NA, nrow = length(feature_names), ncol = length(feature_names),
+                    dimnames = list(feature_names, feature_names))
+# Use for loop to fill the matrix going through the features
+for(x in seq_along(feature_names)) {
+  for(y in seq_along(feature_names)){
+    cr_matrix[x,y] <- crm_value(categorical_features[[x]],
+                                categorical_features[[y]]) # matrix is filled here
+  }
+}
+# convert to df for clean output
+CV_df <- as.data.frame(round(cr_matrix,2))
+# print the data frame
+print(CV_df)
+
+```
 
 
+```{r}
+# Heatmap for Cramer's V matrix (categorical features relationship
+# Convert matrix to long format for ggplot2
+long_matrix <- as.data.frame(as.table(cr_matrix)) %>%
+  rename(Var1 = Var1, Var2 = Var2, V = Freq) %>%
+  drop_na()
+# Plot the heatmap matrix
+ggplot(long_matrix, aes(x = Var1, y = Var2, fill = V)) + # Cramer's V value filled in the relationship grid
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(V, 2)), size = 3.5) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.3, # manually color grid
+                       limit = c(0,1),  name = "Cramer's V") + # with legend on the right
+  labs(title = "Cramer's V Heatmap:Categorical Features Relationship", 
+       x = "Categorical Features", y = " Categorical Features") +
+  theme_minimal()
+
+```
 
 
 
