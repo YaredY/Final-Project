@@ -36,13 +36,15 @@ knitr::opts_chunk$set(echo = TRUE)
 # -Handling outliers
 # -Feature selection
 # -Handling target imbalance
-# Step 3: Model Development and Evaluation
+# Step 3: Model Development 
 # Random Forest, Logistic Regression, Support Vector Machine (SVM)
 # -Train model using training Set
 # -Evaluate model using validation Set
 # -Cross Validation + Hyperparameter tuning 
-# -Retrain model with best Hyperparameters found 
-# -Final model evaluation using testing set 
+# -Retrain model using best Hyperparameters found 
+# -Evaluate model again using validation set
+# Step 4: Final Model Evaluation
+# -Final model evaluation using testing set (unseen data)
 # -Compare models and select the best model using appropriate metrics
 
 ```
@@ -958,8 +960,159 @@ train_FADASYN[dp2_F] <- lapply(train_FADASYN[dp2_F], round, digits = 2)
 str(train_FADASYN)
 View(train_FADASYN)
 ```
+# Step 3: Model Development 
+# Balanced Random Forest (BRF)
+```{r}
+# Step 3: Model Development 
+# Balanced Random Forest (BRF) using the cleaned imbalanced training set
+# Load important libraries
+library(ranger) # to train Balanced RF/ speed and efficiency 
+# Extracting the majority and minority target class
+majority_0 <- train_Fcleaned[train_Fcleaned$CHDRisk == 0,]
+minority_1 <- train_Fcleaned[train_Fcleaned$CHDRisk == 1,]
+
+# Generate samples (by under sampling of the majority class, hence, each tree will get a balanced data set)
+set.seed(123) # ensures reproducibility
+majority_sample1 <- majority_0[sample(nrow(majority_0), nrow(minority_1)),]
+train_BALANCEDRF <- rbind(minority_1, majority_sample1) # combine the sampled majority class with minority class
+predictor_f <- 14 # number of predictors (features)
+m = round(sqrt(predictor_f)) # matry will take the sqrt of number of predictors
+
+# Train balanced random forest 
+BRF_model <- ranger(CHDRisk ~ ., data = train_BALANCEDRF, num.trees = 500, 
+                      mtry = m,
+                      probability = TRUE, 
+                      importance = "impurity", 
+                      classification = TRUE,   seed = 123)
+
+print(BRF_model)
+
+```
+
+```{r}
+# Predict using imbalanced validation set and evaluate the model's predictive performance
+# Focus is on Recall(sensitivity) and ROC(AUC) true positive as predicting CHDRisk (1) accurately is the goal
+predict_BRF <- predict(BRF_model, data = valid_Fcleaned)$predictions[,"1"]
+predict_BRF_class <- ifelse(predict_BRF >= 0.33, 1, 0)
+# Convert probability to factor
+predict_BRF_class <- factor(predict_BRF_class, levels = c(0,1))
+# Print confusion matrix 
+confusionMatrix(predict_BRF_class, valid_Fcleaned$CHDRisk, positive = "1")
+# Compute ROC(AUC) Area Under the Curve
+probs_BRF <- predict_BRF
+rocob_BRF <- roc(valid_Fcleaned$CHDRisk, probs_BRF)
+auc(rocob_BRF)
+```
+
+```{r}
+library(caret)  # to use train() for CV and Tuning
+# Apply Cross Validation(CV) and Hyperparameter Tuning (HT) to find the best parameters
+# Set CV values
+CV_values <- trainControl(method = "cv", number = 5)
+# Set HT grid 
+HT_grid <- expand.grid(mtry = c(2, 4, 6, m),
+min.node.size = c(1,5,10), splitrule = "gini")
+
+# Tune the model using train to find the best hyperparameters 
+tune_BRF_model <- train(CHDRisk ~ ., data = train_BALANCEDRF,
+                        method = "ranger", trControl = CV_values, # CV values is passed
+                        tuneGrid = HT_grid, # HT grid is passed
+                        importance = "impurity")
+
+# View best hyperparameters identified
+print(tune_BRF_model$bestTune)
+
+```
+```{r}
+# Extract the best hyperparameters and keep them on a variable 
+best1_mtry <- tune_BRF_model$bestTune$mtry
+best1_minnz <- tune_BRF_model$bestTune$min.node.size
+best1_splitrule <- tune_BRF_model$bestTune$splitrule
+# Print the best hyperparameters
+print(best1_mtry)
+print(best1_minnz)
+print(best1_splitrule)
+
+```
+
+```{r}
+# Retrain the model using the identified best hyperparameters
+final_BRF_model <- ranger(CHDRisk ~ ., data = train_BALANCEDRF, num.trees = 500, 
+                      mtry = best1_mtry, # number of features randomly selected at each split
+                      min.node.size = best1_minnz, # minimum number of samples in a terinal node
+                      splitrule = best1_splitrule, # used to chose the best split (default Gini Impurity)
+                      probability = TRUE, # output class probabilities
+                      importance = "impurity", # feature contribution for split impurity 
+                      classification = TRUE,   # tells it is a classification task (not regression)
+                      seed = 123)
+
+print(final_BRF_model)
+
+```
+
+```{r}
+# Evaluate tunned and retrained model again using the validation set
+pred_tune_BRF <- predict(final_BRF_model, data = valid_Fcleaned)$predictions[,"1"]
+pred_tune_BRF_class <- ifelse(pred_tune_BRF >= 0.33, 1, 0)
+# Convert probability to factor
+pred_tune_BRF_class <- factor(pred_tune_BRF_class, levels = c(0,1))
+# Print confusion matrix 
+confusionMatrix(pred_tune_BRF_class, valid_Fcleaned$CHDRisk, positive = "1")
+# Compute ROC(AUC) Area Under the Curve
+probs_BRF_tune <- pred_tune_BRF
+rocob_BRF_tune <- roc(valid_Fcleaned$CHDRisk, probs_BRF_tune)
+auc(rocob_BRF_tune)
+
+```
+
+# Measure Feature Importance
+```{r}
+# Model again to identify feature importance on predcition perfromance 
+final_BRF_model2 <- ranger(CHDRisk ~ ., data = train_BALANCEDRF, num.trees = 500, 
+                      mtry = best1_mtry, 
+                      min.node.size = best1_minnz,
+                      splitrule = best1_splitrule,
+                      probability = TRUE, 
+                      importance = "permutation", # impact of features on model prediction performance 
+                      classification = TRUE,   seed = 123)
+
+```
 
 
+```{r}
+# compute feature importance scores
+# Importance for split impurity (impurity)
+importance_scores1 <- final_BRF_model$variable.importance
+print(sort(sorted_importance1, decreasing = TRUE))
+cat("\n") # adds space between outputs
+# Importance for model prediction performance (permutation)
+importance_scores2 <- final_BRF_model2$variable.importance
+print(sort(importance_scores2, decreasing = TRUE))
+```
+
+```{r}
+# Plot the feature importance 
+# Bar plot helps to visualize each predictors influence to reduce node impurity
+par(mar = c(5,10,4,2) + 0.1)
+barplot(sort(importance_scores1, decreasing = FALSE),
+        main = "Features Relative Importance on Reducing Node Impurity",
+        xlab = "Mean Decrease in Gini Index",
+        horiz = TRUE,
+        col = "skyblue",
+        las = 1,
+        cex.names = 0.8)
+
+# Bar plot helps to visualize the feature importance on model prediction accuracy
+par(mar = c(5,10,4,2) + 0.1)
+barplot(sort(importance_scores2, decreasing = FALSE),
+        main = "Features Relative Importance on Prediction Accuracy",
+        xlab = "Mean Decrease Accuracy",
+        horiz = TRUE,
+        col = "brown",
+        las = 1,
+        cex.names = 0.8)
+
+```
 
 
 
