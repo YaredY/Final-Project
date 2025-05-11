@@ -36,12 +36,12 @@ knitr::opts_chunk$set(echo = TRUE)
 # -Handling outliers
 # -Feature selection
 # -Handling target imbalance
-# Step 3: Model Development 
+# Step 3: Model Development and Evaluation
+# Random Forest, Logistic Regression, Support Vector Machine (SVM)
 # -Train model using training Set
 # -Evaluate model using validation Set
 # -Cross Validation + Hyperparameter tuning 
 # -Retrain model with best Hyperparameters found 
-# Step 4: Model Evaluation 
 # -Final model evaluation using testing set 
 # -Compare models and select the best model using appropriate metrics
 
@@ -869,7 +869,19 @@ for (feature in feature_cols) {
 
 ```
 
+# Feature Selection
+```{r}
+# Based on medical domain knowledge research education has less predictive power for CHD
+# Statistical Cramer's v heat map matrix also show weak relationship and predictive power
+# It is also mutivalued that could lead to bias and model complexity, therefore better dropped
+# Drop it from train_Fcapped
+train_Fcleaned <- train_Fcapped %>% select(-education)
+# Drop it from valid_Fcapped
+valid_Fcleaned <- valid_Fcapped %>% select(-education)
+# Drop it from test_Fcapped
+test_Fcleaned <- test_Fcapped %>% select(-education)
 
+```
 
 
 
