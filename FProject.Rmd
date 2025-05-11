@@ -247,7 +247,7 @@ framing_factored %>%
   summarise(across(everything(), ~{    # (~/tidle in R) operator introduce function to be applied on each feature
     first_q <- quantile(.x, 0.25, na.rm = TRUE) # na.rm = TRUE ignores the NA (misisng) values 
     third_q <- quantile(.x, 0.75, na.rm = TRUE)
-    interquartile_r <- third_q - first_q 
+    interquartile_r <- third_q - first_q # calculate interquartile range
     lower_thr <- first_q - 1.5 * interquartile_r
     upper_thr <- third_q + 1.5 * interquartile_r
     # for each feature (.x) count values that are less than the lower bound and or greater than the upper bound
@@ -769,9 +769,119 @@ print(imputed_test1)
 
 ```
 
+# 2.3 Data Pre-processing 
+# Handling Outliers
+```{r}
+# 2.3 Data Pre-processing 
+# Handling Outliers (first see their distribution in the training set)
+train_Fimputed %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything()) %>%
+  ggplot(aes(x = "", y = value)) +
+  geom_boxplot(fill = "skyblue") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal()
+# Note: the output show that there are still lots of outliers in the training set
+```
+
+```{r}
+# IRQ Capping method is used to handle the outliers in numeric features
+# Values above and below the capping threshold are capped with the upper/lower threshold value 
+# upper threshold = first quartile - 1.5 * interquartile range
+# lower threshold = third quartile + 1.5 * interquartile range
+feature_names <- c("age", "cigsPerDay", "totChol", "sysBP", "diaBP", "BMI", "heartRate", "glucose") # numeric features
+# create a data frame to store features and capping threshold (lower, upper)
+capping_DF <- data.frame(feature = character(),
+                            lower = numeric(), upper = numeric()) 
+# keep copy of Fimputed data for safe pipeline                     
+train_Fcapped <- train_Fimputed 
+# For loop to go through the feature names vector and access each feature
+for(feature in feature_names){
+  f_quartile <- unname(quantile(train_Fimputed[[feature]], 0.25, na.rm = TRUE)) # calculate first quartile
+  t_quartile <- unname(quantile(train_Fimputed[[feature]], 0.75, na.rm = TRUE)) # calculate third quartile
+  i_quartile_r <- t_quartile - f_quartile # compute interqurtile range
+
+lower_thr1 <- f_quartile - 1.5 * i_quartile_r # lower threshold 
+upper_thr1 <- t_quartile + 1.5 * i_quartile_r # upper threshold
+assign(paste0("cap_values_", feature), c(lower_thr1 = lower_thr1, upper_thr1 = upper_thr1)) # Assign threshold 
+
+# Apply IQR Capping to the training data 
+train_Fcapped[[feature]] <- pmin(pmax(train_Fcapped[[feature]], lower_thr1), upper_thr1)
+# Add capping values for each feature to the capping table 
+capping_DF <- rbind(capping_DF, data.frame(Feature = feature, Lower_Threshold = lower_thr1, Upper_Threshold = upper_thr1))
+}
+# Print the capping data frame to see capping threshold for each numeric feature
+print(capping_DF)
+
+```
+
+```{r}
+# Check to see if the capping method successfully handle the outliers
+train_Fcapped %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything()) %>%
+  ggplot(aes(x = "", y = value)) +
+  geom_boxplot(fill = "skyblue") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal()
+# Note: output confirm all outliers are handled (no outlier in the training set)
+```
+```{r}
+# Calculate number and percentage of outliers in the numeric features 
+train_Fcapped %>%
+  select(where(is.numeric)) %>% # select only numeric features
+  # select all columns and summarise to rows
+  summarise(across(everything(), ~{    # (~/tidle in R) operator introduce function to be applied on each feature
+    first_q <- quantile(.x, 0.25, na.rm = TRUE) # na.rm = TRUE ignores the NA (misisng) values 
+    third_q <- quantile(.x, 0.75, na.rm = TRUE)
+    interquartile_r <- third_q - first_q # calculate interquartile range
+    lower_thr <- first_q - 1.5 * interquartile_r
+    upper_thr <- third_q + 1.5 * interquartile_r
+    # for each feature (.x) count values that are less than the lower bound and or greater than the upper bound
+    sum(.x < lower_thr | .x > upper_thr, na.rm = TRUE) # .x represent current value (feature) explored
+  })) %>%
+  pivot_longer(everything(), names_to = "Features", # converts to longer format and output column name
+               values_to = "Number_Of_Outliers") %>% # output column name
+  mutate(Percentage = round(Number_Of_Outliers / nrow(framing_factored), 3)) # percentage of outliers per feature
+
+```
+
+```{r}
+# Handle the outliers in validation and testing set (no recalculation of capping values)
+# Using the cap values from the training set to avoid DATA LEAKAGE problem
+# keep copy of the validation and testing set
+valid_Fcapped <- valid_Fimputed
+test_Fcapped <- test_Fimputed
+feature_cols <- c("age", "cigsPerDay", "totChol", "sysBP", "diaBP", "BMI", "heartRate", "glucose")
+for (feature in feature_cols) {
+  cap_values2 <- get(paste0("cap_values_", feature)) # extract cap values from training cap
+  
+# update outliers in the validation set
+  valid_Fcapped[[feature]] <- pmin(pmax(valid_Fcapped[[feature]], cap_values2["lower_thr1"]), 
+                                  cap_values2["upper_thr1"])
+  
+# update outliers in the testing set 
+  test_Fcapped[[feature]] <- pmin(pmax(test_Fcapped[[feature]], cap_values2["lower_thr1"]), 
+                                  cap_values2["upper_thr1"])
+  
+  print(cap_values2) # print lower and upper capping values
+}
+
+```
 
 
 
+
+
+
+
+
+```{r}
+
+
+
+
+```
 
 
 
