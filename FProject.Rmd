@@ -875,25 +875,91 @@ for (feature in feature_cols) {
 # Statistical Cramer's v heat map matrix also show weak relationship and predictive power
 # It is also mutivalued that could lead to bias and model complexity, therefore better dropped
 # Drop it from train_Fcapped
-train_Fcleaned <- train_Fcapped %>% select(-education)
+# train_Fcleaned <- train_Fcapped %>% select(-education)
 # Drop it from valid_Fcapped
-valid_Fcleaned <- valid_Fcapped %>% select(-education)
+# valid_Fcleaned <- valid_Fcapped %>% select(-education)
 # Drop it from test_Fcapped
-test_Fcleaned <- test_Fcapped %>% select(-education)
+# test_Fcleaned <- test_Fcapped %>% select(-education)
 
 ```
 
 
+# Handling Target Imbalance
+```{r}
+# Handling target imbalance (important for modeling, especially for CHD prediction)
+# Target imbalance cause prediction to be biased towards majority class 
+# The framingham data is hugely imbalanced (85% majority class(0) for no CHD risk, 15% minority class(1) for CHD risk
+# oversampling target balancing method ADASYN( Adaptive SMOTE) is used to create synthetic samples to increase minority
+library(smotefamily) # to implement ADASYN
+train_Fada <- train_Fcleaned # Copy to keep cleaned trained data safe
+train_Fada <- train_Fada %>%
+  mutate(across(where(is.factor), ~ as.numeric(as.character(.)))) # change all factor (categorical) features to numeric
+train_Fada$CHDRisk <- as.factor(train_Fada$CHDRisk) # keep the target as factor
+# Separate predictor features and target (CHDRisk)
+x_predictors <- train_Fada %>% select(-CHDRisk)
+y_target <- train_Fada$CHDRisk
 
+# Apply ADASYN to create synthetic data to balance the target CHDRisk
+ADASYN_synthetic <- ADAS(x_predictors, y_target, K = 4)
+train_FADASYN <- ADASYN_synthetic$data
 
+```
 
 
 ```{r}
-
-
-
+# Check the generated synthetic data
+View(train_FADASYN)
+str(train_FADASYN)
+```
+```{r}
+# ADASYN changed the target variable name into class, rename it back to CHDRisk
+train_FADASYN <- train_FADASYN %>% rename(CHDRisk = class)
+# Convert target (CHDRisk) back to factor
+train_FADASYN$CHDRisk <- as.factor(train_FADASYN$CHDRisk)
+# Check the new target distribution 
+table(train_FADASYN$CHDRisk)
+prop.table(table(train_FADASYN$CHDRisk))
 
 ```
+```{r}
+# graphical representation of target variable distribution
+train_FADASYN %>% 
+  count(CHDRisk) %>%
+  mutate(Percent = paste0(round(n/sum(n) * 100, 2)),
+         CHDRisk = factor(CHDRisk, levels = c(0,1), labels = c("NoRisk", "HighRisk"))) %>%
+  ggplot(aes(x = CHDRisk, y = n, fill = CHDRisk)) +
+  geom_col(width = 0.5) +
+  geom_text(aes(label = paste0(n, " (", Percent, "%)")), vjust = -0.2, size = 3.5) +
+  scale_fill_manual(values = c("skyblue", "brown"))+
+  labs(title = "Distribution of Target Variable (CHDRisk)", x = "CHDRisk", y = "Count") +
+  theme_minimal()
+# Note: the barplot output showed a balanced distribution(50.04%/49.96%) of target(CHDRisk) (0 = NoRisk, 1 = HighRisk)
+```
+```{r}
+# After ADASYN the structure of the data such as decimal places and data types are changed 
+# Rearrange them back to their original structure (features have different structures)
+# Round them to appropriate decimal points
+# Categorical variables (binary, 0 and 1)
+cat_F0dp <- c("gender", "currentSmoker", "BPMeds", "stroke", "hypertension", "diabetes")
+train_FADASYN[cat_F0dp] <- lapply(train_FADASYN[cat_F0dp], round)
+# Whole numbers (integers)
+integer_F <- c("age", "cigsPerDay", "heartRate")
+train_FADASYN[integer_F] <- lapply(train_FADASYN[integer_F], round)
+# Round to 1 decimal place(dp1)
+dp1_F <- c("diaBP", "glucose", "totChol")
+train_FADASYN[dp1_F] <- lapply(train_FADASYN[dp1_F], round, digits = 1)
+# Round to 2 decimal place (2dp)
+dp2_F <- c("sysBP", "BMI")
+train_FADASYN[dp2_F] <- lapply(train_FADASYN[dp2_F], round, digits = 2)
+```
+
+```{r}
+# Check the rearranged data structure
+str(train_FADASYN)
+View(train_FADASYN)
+```
+
+
 
 
 
