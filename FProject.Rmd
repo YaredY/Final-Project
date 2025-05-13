@@ -1114,7 +1114,116 @@ barplot(sort(importance_scores2, decreasing = FALSE),
 
 ```
 
+# Logistic Regression (LR)
+```{r}
+# Pre-process to rearrange data type of features for LR and SVM models
+# Change factor features into numeric for validation set 
+valid_FADASYN <- valid_Fcleaned # keep copy of the cleaned validation set
+valid_FADASYN <- valid_FADASYN %>%
+  mutate(across(where(is.factor), ~ as.numeric(as.character(.))))
+valid_FADASYN$CHDRisk <- as.factor(valid_FADASYN$CHDRisk) # keep the target(CHDRisk) as factor
 
+# Change factor features into numeric for testing set 
+test_FADASYN <- test_Fcleaned # keep copy of the cleaned testing set
+test_FADASYN <- test_FADASYN %>%
+  mutate(across(where(is.factor), ~ as.numeric(as.character(.))))
+test_FADASYN$CHDRisk <- as.factor(test_FADASYN$CHDRisk) # keep the target(CHDRisk) as factor
+
+```
+
+
+
+```{r}
+# Load important packages for Logistic Regression
+library(glmnet) # for cross validation and hyperparameter tuning
+library(caret) # for basic logistic regression training
+library(pROC) # for ROC(AUC) plot and calculation
+# Train Logistic Regression (LR) using the balanced(ADASYN) data 
+LR_model1 <- glm(CHDRisk ~ ., data = train_ADASYN, family = "binomial")
+summary(LR_model1)
+
+```
+
+```{r}
+# Evaluate model using validation set
+# Predict probabilities using the trained LR_model1 
+LR_probs1 <- predict(LR_model1, newdata = valid_FADASYN, type = "response")
+# Convert probs to class labels 
+LR_preds1 <- ifelse(LR_probs1 >= 0.33, "1", "0")
+# Make sure target var(CHDRisk) is factor with similar level
+target_levels1 <- as.factor(valid_FADASYN$CHDRisk)
+LR_preds1 <- factor(LR_preds1, levels = levels(target_levels1))
+# Compute confusion matrix
+confusionMatrix(LR_preds1, target_levels1, positive = "1")
+# ROC(AUC) calculated 
+roc_LR1 <- roc(valid_FADASYN$CHDRisk, LR_probs1)
+auc(roc_LR1)
+
+```
+
+```{r}
+# Cross Validation (CV) and Hyperparameter Tuning (HT) to improve model performance
+# Split features and target(CHDRisk)
+LR_feaures <- model.matrix(CHDRisk ~ ., data = train_ADASYN)[,-1] # extract features exclusing target
+LR_target <- train_ADASYN$CHDRisk
+# CV + HT
+set.seed(123)
+CV_LR <- cv.glmnet(
+  LR_feaures, LR_target, alpha = 1, 
+  family = "binomial", type.measure = "auc", nfolds = 5
+)
+# Extract best lambda from the CV + HT and use it to retrain model
+best_LR_lambda <- CV_LR$lambda.min
+# Print the best hyperparameter (lambda)
+print(best_LR_lambda)
+# Retrain model using best lambda
+final_LRmodel <- glmnet(LR_feaures, LR_target, alpha = 1,
+                      lambda = best_LR_lambda, family = "binomial")
+
+```
+```{r}
+# Predict again using validation set to check performance improvement
+# Prepare the validation set
+val_features <- model.matrix(CHDRisk ~ ., data = valid_FADASYN)[,-1]
+val_target <- valid_FADASYN$CHDRisk
+# Predict probabilities
+pred_Vprobs <- predict(final_LRmodel, newx = val_features, type = "response")
+# Convert probs to class 
+pred_Vclass <- ifelse(pred_Vprobs >= 0.3, 1, 0)
+pred_Vclass <- factor(pred_Vclass, levels = c("0", "1")) # Make it a factor
+# Calculate and print the Confusion Matrix and statistics (Recall, Precision, and Balanced Accuracy)
+confusionMatrix(pred_Vclass, val_target, positive= "1" )
+# C alculate ROC(AUC)
+roc_Vobj <- roc(val_target, as.numeric(pred_Vprobs))
+auc(roc_Vobj)
+
+```
+# Measure feature importance (LR)
+```{r}
+# Extract coefficients of LR from the final retrained model
+coefs_LR <- coef(final_LRmodel)
+coefs_LR_df <- as.data.frame(as.matrix(coefs_LR)) # convert to data frame
+coefs_LR_df$Feature <- rownames(coefs_LR_df)
+colnames(coefs_LR_df)[1] <- "Coefficient"
+
+# Remove intercept from the data frame 
+coefs_LR_df <- coefs_LR_df[coefs_LR_df$Feature != "(Intercept)",]
+# Compute importance 
+coefs_LR_df$Importance <- abs(coefs_LR_df$Coefficient)
+
+# Sort the data frame by importance (the most important ones on the top,with long bars)
+coefs_LR_df <- coefs_LR_df[order(-coefs_LR_df$Importance),]
+# Print the feature importance data frame
+coefs_LR_df
+
+# Plot feature importance 
+ggplot(coefs_LR_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "brown") +
+  coord_flip() + # flips vertical bars to horizontal (vertical(y) becomes horizontal)
+  labs(title = "Feature Importance (Logistic Regression)", 
+       x = "Feature", y = "Absolute Coefficient") +
+  theme_minimal()
+```
 
 
 
