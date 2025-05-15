@@ -506,14 +506,18 @@ ggplot(long_matrix, aes(x = Var1, y = Var2, fill = V)) + # Cramer's V value fill
 
 # Step 2: Splitting the data set and data preparation for modeling
 ```{r}
+# Library for sampling
+library(rsample) 
+```
+
+
+```{r}
 # 2.1 Splitting the data set 
 # Proportion: training set 70% /validation set 15%/ testing set 15%
-library(rsample)
-set.seed(123)
-
 # Step 1: initial split 70% training 30% (validation + testing set)
 # Use stratified sampling to balance the target (CHDRisk) distribution across sets
 # Dealing with difficult imbalanced data
+set.seed(123)
 first_split <- initial_split(framing_factored, prop = 0.7, strata = CHDRisk)
 train_framing <- training(first_split)
 valid_and_test <- testing(first_split)
@@ -537,13 +541,20 @@ table(test_framing$CHDRisk) / nrow(test_framing)
 # Hnadling missing values
 # Identify missingness mechanism
 ```{r}
+# Library for map function to determine missing mechanism
+library(purrr) 
+
+```
+
+
+
+```{r}
 # 2.2 Data Cleaning 
 # Handling Missing Values (training set)
 # First identify mechanisms of missing data in numeric features using Logistic Regression
 # Check for Missing Completely At Random (MCAR), 
 # Missing At Random (MAR) 
 # Missing Not At Random (MNAR) 
-library(purrr) # for map function
 # Numeric features with missing values
 numeric_f_missing <- train_framing %>% select(where(is.numeric)) %>% # select numeric features
   select(where(~ any(is.na(.)))) %>% names() # numeric features with missing (NA) values
@@ -828,6 +839,19 @@ train_Fcapped %>%
   theme_minimal()
 # Note: output confirm all outliers are handled (no outlier in the training set)
 ```
+
+```{r}
+# Detecting outliers in glucose
+ggplot(train_Fcapped, aes(x = "", y = glucose)) + # extract glucose and count of glucose represent the y axis
+  geom_boxplot(fill = "skyblue") + # the box plot is filled skyblue color
+  geom_hline(yintercept = lower_threshold, linetype = "dashed", color = "red") + # draw the lower threshold 
+  geom_hline(yintercept = upper_threshold, linetype = "dashed", color = "red") + # draw the upper threshold 
+  labs(title = "Boxpot with red dashed outlier threshold to detect outliers in glucose") +
+  theme_minimal()
+
+```
+
+
 ```{r}
 # Calculate number and percentage of outliers in the numeric features 
 train_Fcapped %>%
@@ -877,11 +901,11 @@ for (feature in feature_cols) {
 # Statistical Cramer's v heat map matrix also show weak relationship and predictive power
 # It is also mutivalued that could lead to bias and model complexity, therefore better dropped
 # Drop it from train_Fcapped
-# train_Fcleaned <- train_Fcapped %>% select(-education)
+train_Fcleaned <- train_Fcapped %>% select(-education)
 # Drop it from valid_Fcapped
-# valid_Fcleaned <- valid_Fcapped %>% select(-education)
+valid_Fcleaned <- valid_Fcapped %>% select(-education)
 # Drop it from test_Fcapped
-# test_Fcleaned <- test_Fcapped %>% select(-education)
+test_Fcleaned <- test_Fcapped %>% select(-education)
 
 ```
 
@@ -963,10 +987,17 @@ View(train_FADASYN)
 # Step 3: Model Development 
 # Balanced Random Forest (BRF)
 ```{r}
+# Libraries for BRF
+library(ranger) # to train Balanced RF/ speed and efficiency
+library(caret)  # to use train() for CV and Tuning
+library(pROC) # for ROC(AUC) plot and calculation
+```
+
+
+```{r}
 # Step 3: Model Development 
 # Balanced Random Forest (BRF) using the cleaned imbalanced training set
 # Load important libraries
-library(ranger) # to train Balanced RF/ speed and efficiency 
 # Extracting the majority and minority target class
 majority_0 <- train_Fcleaned[train_Fcleaned$CHDRisk == 0,]
 minority_1 <- train_Fcleaned[train_Fcleaned$CHDRisk == 1,]
@@ -1005,7 +1036,6 @@ auc(rocob_BRF)
 ```
 
 ```{r}
-library(caret)  # to use train() for CV and Tuning
 # Apply Cross Validation(CV) and Hyperparameter Tuning (HT) to find the best parameters
 # Set CV values
 CV_values <- trainControl(method = "cv", number = 5)
@@ -1132,12 +1162,17 @@ test_FADASYN$CHDRisk <- as.factor(test_FADASYN$CHDRisk) # keep the target(CHDRis
 ```
 
 
-
 ```{r}
-# Load important packages for Logistic Regression
+# Load important libraries for Logistic Regression
 library(glmnet) # for cross validation and hyperparameter tuning
 library(caret) # for basic logistic regression training
 library(pROC) # for ROC(AUC) plot and calculation
+
+```
+
+
+
+```{r}
 # Train Logistic Regression (LR) using the balanced(ADASYN) data 
 LR_model1 <- glm(CHDRisk ~ ., data = train_ADASYN, family = "binomial")
 summary(LR_model1)
