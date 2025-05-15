@@ -1024,7 +1024,7 @@ print(BRF_model)
 # Predict using imbalanced validation set and evaluate the model's predictive performance
 # Focus is on Recall(sensitivity) and ROC(AUC) true positive as predicting CHDRisk (1) accurately is the goal
 predict_BRF <- predict(BRF_model, data = valid_Fcleaned)$predictions[,"1"]
-predict_BRF_class <- ifelse(predict_BRF >= 0.33, 1, 0)
+predict_BRF_class <- ifelse(predict_BRF >= 0.33, 1, 0) # adjust classification threshold
 # Convert probability to factor
 predict_BRF_class <- factor(predict_BRF_class, levels = c(0,1))
 # Print confusion matrix 
@@ -1083,7 +1083,7 @@ print(final_BRF_model)
 ```{r}
 # Evaluate tunned and retrained model again using the validation set
 pred_tune_BRF <- predict(final_BRF_model, data = valid_Fcleaned)$predictions[,"1"]
-pred_tune_BRF_class <- ifelse(pred_tune_BRF >= 0.33, 1, 0)
+pred_tune_BRF_class <- ifelse(pred_tune_BRF >= 0.33, 1, 0) # adjust classification threshold
 # Convert probability to factor
 pred_tune_BRF_class <- factor(pred_tune_BRF_class, levels = c(0,1))
 # Print confusion matrix 
@@ -1173,8 +1173,8 @@ library(pROC) # for ROC(AUC) plot and calculation
 
 
 ```{r}
-# Train Logistic Regression (LR) using the balanced(ADASYN) data 
-LR_model1 <- glm(CHDRisk ~ ., data = train_ADASYN, family = "binomial")
+# Train Logistic Regression (LR) using the balanced(FADASYN) data 
+LR_model1 <- glm(CHDRisk ~ ., data = train_FADASYN, family = "binomial")
 summary(LR_model1)
 
 ```
@@ -1184,7 +1184,7 @@ summary(LR_model1)
 # Predict probabilities using the trained LR_model1 
 LR_probs1 <- predict(LR_model1, newdata = valid_FADASYN, type = "response")
 # Convert probs to class labels 
-LR_preds1 <- ifelse(LR_probs1 >= 0.33, "1", "0")
+LR_preds1 <- ifelse(LR_probs1 >= 0.5, "1", "0") # adjust classification threshold
 # Make sure target var(CHDRisk) is factor with similar level
 target_levels1 <- as.factor(valid_FADASYN$CHDRisk)
 LR_preds1 <- factor(LR_preds1, levels = levels(target_levels1))
@@ -1199,8 +1199,8 @@ auc(roc_LR1)
 ```{r}
 # Cross Validation (CV) and Hyperparameter Tuning (HT) to improve model performance
 # Split features and target(CHDRisk)
-LR_feaures <- model.matrix(CHDRisk ~ ., data = train_ADASYN)[,-1] # extract features exclusing target
-LR_target <- train_ADASYN$CHDRisk
+LR_feaures <- model.matrix(CHDRisk ~ ., data = train_FADASYN)[,-1] # extract features exclusing target
+LR_target <- train_FADASYN$CHDRisk
 # CV + HT
 set.seed(123)
 CV_LR <- cv.glmnet(
@@ -1224,7 +1224,7 @@ val_target <- valid_FADASYN$CHDRisk
 # Predict probabilities
 pred_Vprobs <- predict(final_LRmodel, newx = val_features, type = "response")
 # Convert probs to class 
-pred_Vclass <- ifelse(pred_Vprobs >= 0.3, 1, 0)
+pred_Vclass <- ifelse(pred_Vprobs >= 0.5, 1, 0) # adjust classification threshold
 pred_Vclass <- factor(pred_Vclass, levels = c("0", "1")) # Make it a factor
 # Calculate and print the Confusion Matrix and statistics (Recall, Precision, and Balanced Accuracy)
 confusionMatrix(pred_Vclass, val_target, positive= "1" )
@@ -1233,7 +1233,7 @@ roc_Vobj <- roc(val_target, as.numeric(pred_Vprobs))
 auc(roc_Vobj)
 
 ```
-# Measure feature importance (LR)
+# Measure Feature Importance (LR)
 ```{r}
 # Extract coefficients of LR from the final retrained model
 coefs_LR <- coef(final_LRmodel)
@@ -1259,6 +1259,84 @@ ggplot(coefs_LR_df, aes(x = reorder(Feature, Importance), y = Importance)) +
        x = "Feature", y = "Absolute Coefficient") +
   theme_minimal()
 ```
+
+# Support Vector Machine (SVM) Model
+```{r}
+# Load important libraries 
+library(e1071) # for svm method
+library(caret) # for confusion matrix
+library(kernlab) # for kernel based ML (SVM)
+
+```
+
+
+```{r}
+# Train SVM Linear model using the balanced (train_FADASYN) data
+SVM_Lmodel1 <- svm(CHDRisk ~ ., data = train_FADASYN, kernel = "linear",
+                  scale = TRUE, probability = TRUE)
+print(SVM_Lmodel1)
+
+```
+
+```{r}
+# Predict and evaluate the SVM linear model using the validation set (valid_FADASYN)
+pred_SVML1 <- attr(predict(SVM_Lmodel1, valid_FADASYN, probability = TRUE), "probabilities") [,"1"]
+# Probability class assigned 
+prob_SVM_class1 <- ifelse(pred_SVML1 >= 0.3, 1, 0) # adjust classification threshold
+# Change probability class into factor
+prob_SVM_class1 <- factor(prob_SVM_class1, levels = c("0", "1"))
+# Generate a Confusion Matrix 
+confusionMatrix(prob_SVM_class1, valid_FADASYN$CHDRisk, positive = "1")
+# ROC(AUC) 
+roc_SVML1 <- roc(valid_FADASYN$CHDRisk, pred_SVML1)
+auc(roc_SVML1)
+
+```
+
+```{r}
+# Cross Validation (CV) and Hyperparameter Tuning(HT)
+# Tune to find optimal hyperparameter C for linear kernel based SVM
+# Set seed for consistent reproducibility  
+# 10 fold cross validation is implemented automatically 
+set.seed(123)
+tune_LSVM <- tune(svm, CHDRisk ~ ., data = train_FADASYN,
+                   kernel = "linear",
+                   ranges = list(cost = c(0.01, 1, 100)),
+                   scale = TRUE
+                   )
+summary(tune_LSVM) # summary of the hyperparameter tuning process
+tune_LSVM$best.parameters$cost # extract the best cost value from the model
+optimal_SVM_cost <- tune_LSVM$best.parameters$cost # keep the optimal cost on a variable to be used later 
+
+```
+```{r}
+# Retrain the final SVM classifier model using linear kernel and optimal value of hyperparameter C
+final_LSVM_model <- svm(CHDRisk ~ ., data = train_FADASYN,
+                 kernel = "linear",
+                 cost = optimal_SVM_cost, # optimal cost assigned to cost value during training 
+                 scale = TRUE,
+                 probability = TRUE  # set to be used for the ROC curve
+                 ) 
+summary(final_LSVM_model)
+
+```
+
+```{r}
+# Predict and evaluate the final linear SVM  model using the validation set (valid_FADASYN)
+pred_SVML2 <- attr(predict(final_LSVM_model, valid_FADASYN, probability = TRUE), "probabilities") [,"1"]
+# Probability class assigned 
+prob_SVM_class2 <- ifelse(pred_SVML2 >= 0.3, 1, 0) # adjust classification threshold
+# Change probability class into factor
+prob_SVM_class2 <- factor(prob_SVM_class2, levels = c("0", "1"))
+# Generate a Confusion Matrix 
+confusionMatrix(prob_SVM_class2, valid_FADASYN$CHDRisk, positive = "1")
+# ROC(AUC) Area under the curve value 
+roc_SVML2 <- roc(valid_FADASYN$CHDRisk, pred_SVML2)
+auc(roc_SVML2)
+
+```
+
+
 
 
 
