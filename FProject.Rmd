@@ -1335,6 +1335,38 @@ roc_SVML2 <- roc(valid_FADASYN$CHDRisk, pred_SVML2)
 auc(roc_SVML2)
 
 ```
+# Feature Importance (Linear SVM model)
+```{r}
+# The linear SVM model Feature Importance
+# Extract coefficient's weight from the model
+coefs_weights <- t(final_LSVM_model$coefs) %*% final_LSVM_model$SV
+# Convert to vector 
+feature_impo <- abs(as.vector(coefs_weights)) # abs ( all positive values)
+names(feature_impo) <- colnames(train_FADASYN)[colnames(train_FADASYN) != "CHDRisk"]
+# Sort the feature importance in decreasing order(the higher values on the top)
+feature_impo <- sort(feature_impo, decreasing = TRUE)
+print(feature_impo)
+
+```
+
+```{r}
+# Plot the feature importance using ggplot
+# Create a data frame to store the importance
+df__importance <- data.frame(Feature_name = names(feature_impo),
+                            Importance_val = as.numeric(feature_impo))
+# Rearrange the data frame in decreasing importance and convert it into factor level
+df__importance$Feature_name <- factor(df__importance$Feature_name, 
+                                 levels = rev(names(sort(feature_impo, decreasing = TRUE))))
+
+# Plot feature importance 
+ggplot(df__importance, aes(x = Feature_name, y = Importance_val)) +
+  geom_bar(stat = "identity", fill = "brown") +
+  coord_flip() +
+  labs(title = "SVM (Linear Kernel) Feature Importance", 
+       x = "Feature", y = "Importance") +
+  theme_minimal()
+
+```
 
 
 
