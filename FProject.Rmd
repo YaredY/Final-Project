@@ -37,7 +37,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # -Feature selection
 # -Handling target imbalance
 # Step 3: Model Development 
-# Random Forest, Logistic Regression, Support Vector Machine (SVM)
+# Balanced Random Forest(BRF), Logistic Regression(LR), Support Vector Machine(SVM)
 # -Train model using training Set
 # -Evaluate model using validation Set
 # -Cross Validation + Hyperparameter tuning 
@@ -1365,6 +1365,66 @@ ggplot(df__importance, aes(x = Feature_name, y = Importance_val)) +
   labs(title = "SVM (Linear Kernel) Feature Importance", 
        x = "Feature", y = "Importance") +
   theme_minimal()
+
+```
+# Step 4: Final Model Evaluation 
+# Balanced Random Forest(BRF) using testing set
+```{r}
+# Step 4: Final Model Evaluation 
+# Using testing set (unseen data)
+# Balanced Random Forest(BRF)
+# Predict and evaluate model using the testing set (unseen data)
+pred_BRF_test <- predict(final_BRF_model, data = test_cleaned)$predictions[,"1"]
+pred_BRF_test_class <- ifelse(pred_BRF_test >= 0.3, 1, 0) # adjust classification threshold
+# Convert probability to factor
+pred_BRF_test_class <- factor(pred_BRF_test_class, levels = c(0,1))
+# Print confusion matrix 
+cat("Balanced Regression Model (BRM) Result", "\n")
+cat("\n")
+confusionMatrix(pred_BRF_test_class, test_cleaned$CHDRisk, positive = "1")
+# Compute ROC(AUC) Area Under the Curve
+probs_BRF_test <- pred_BRF_test
+rocob_BRF_test <- roc(test_cleaned$CHDRisk, probs_BRF_test)
+auc(rocob_BRF_test)
+
+```
+
+# Logistic Regression(LR)
+```{r}
+# Predict using testing set for final model evaluation
+# Prepare the testing set
+test_features <- model.matrix(CHDRisk ~ ., data = test_FADASYN)[,-1]
+test_target <- test_FADASYN$CHDRisk
+# Predict probabilities
+pred_Tprobs <- predict(final_LRmodel, newx = test_features, type = "response")
+# Convert probs to class 
+pred_Tclass <- ifelse(pred_Tprobs >= 0.3, 1, 0) # adjust classification threshold
+pred_Tclass <- factor(pred_Tclass, levels = c("0", "1")) # Make it a factor
+# Calculate and print the Confusion Matrix and statistics (Recall, Precision, and Balanced Accuracy)
+cat("Logistic Regression Model (LR) Result", "\n")
+cat("\n")
+confusionMatrix(pred_Tclass, test_target, positive= "1" )
+# Calculate ROC(AUC) Area Under the Curve
+roc_Tobj <- roc(test_target, as.numeric(pred_Tprobs))
+auc(roc_Tobj)
+
+
+```
+# Sopport Vector Machine(SVM)
+```{r}
+# Predict and evaluate the linear SVM  model using the testing set (unseen data)
+pred_SVML_test <- attr(predict(final_LSVM_model, test_FADASYN, probability = TRUE), "probabilities") [,"1"]
+# Probability class assigned 
+prob_SVM_class_test <- ifelse(pred_SVML_test >= 0.3, 1, 0) # adjust classification threshold
+# Change probability class into factor
+prob_SVM_class_test <- factor(prob_SVM_class_test, levels = c("0", "1"))
+# Generate a Confusion Matrix 
+cat("Support Vector Machine (SVM) Result", "\n")
+cat("\n")
+confusionMatrix(prob_SVM_class_test, test_FADASYN$CHDRisk, positive = "1")
+# ROC(AUC) Area under the curve 
+roc_SVML_test <- roc(test_FADASYN$CHDRisk, pred_SVML_test)
+auc(roc_SVML_test)
 
 ```
 
