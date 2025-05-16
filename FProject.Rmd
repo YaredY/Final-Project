@@ -1069,7 +1069,7 @@ print(best1_splitrule)
 # Retrain the model using the identified best hyperparameters
 final_BRF_model <- ranger(CHDRisk ~ ., data = train_BALANCEDRF, num.trees = 500, 
                       mtry = best1_mtry, # number of features randomly selected at each split
-                      min.node.size = best1_minnz, # minimum number of samples in a terinal node
+                      min.node.size = best1_minnz, # minimum number of samples in a terminal node
                       splitrule = best1_splitrule, # used to chose the best split (default Gini Impurity)
                       probability = TRUE, # output class probabilities
                       importance = "impurity", # feature contribution for split impurity 
@@ -1097,7 +1097,7 @@ auc(rocob_BRF_tune)
 
 # Measure Feature Importance
 ```{r}
-# Model again to identify feature importance on predcition perfromance 
+# Model again to identify feature importance on prediction performance 
 final_BRF_model2 <- ranger(CHDRisk ~ ., data = train_BALANCEDRF, num.trees = 500, 
                       mtry = best1_mtry, 
                       min.node.size = best1_minnz,
@@ -1224,7 +1224,7 @@ val_target <- valid_FADASYN$CHDRisk
 # Predict probabilities
 pred_Vprobs <- predict(final_LRmodel, newx = val_features, type = "response")
 # Convert probs to class 
-pred_Vclass <- ifelse(pred_Vprobs >= 0.5, 1, 0) # adjust classification threshold
+pred_Vclass <- ifelse(pred_Vprobs >= 0.3, 1, 0) # adjust classification threshold
 pred_Vclass <- factor(pred_Vclass, levels = c("0", "1")) # Make it a factor
 # Calculate and print the Confusion Matrix and statistics (Recall, Precision, and Balanced Accuracy)
 confusionMatrix(pred_Vclass, val_target, positive= "1" )
@@ -1427,8 +1427,48 @@ roc_SVML_test <- roc(test_FADASYN$CHDRisk, pred_SVML_test)
 auc(roc_SVML_test)
 
 ```
+# ROC(AUC) Curve Analyis 
+```{r}
+library(ROCR)
+```
 
 
+```{r}
+# Plot ROC (AUC)curve to compare models Area Under the Curve (AUC) values
+# Prediction objects used for ROC curve analysis
+# Predict values(probs) extracted from each models prediction
+BRF_predict2 <- prediction(pred_BRF_test, test_cleaned$CHDRisk)
+LR_predict2 <- prediction(pred_Tprobs, test_FADASYN$CHDRisk)
+LSVM_predict2 <- prediction(pred_SVML_test, test_FADASYN$CHDRisk)
+
+# ROC curves for Balanced Random Forest, Logistic Regression, and linear kernel SVM models
+BRF_perform2 <- performance(BRF_predict2, "tpr", "fpr")
+LR_perform2 <- performance(LR_predict2, "tpr", "fpr")
+LSVM_perform2 <- performance(LSVM_predict2, "tpr", "fpr")
+
+# Extract AUC(Area Under the Curve) values for comparison 
+BRF_AUC2 <- round(performance(BRF_predict2, "auc")@y.values[[1]], 3)
+LR_AUC2 <- round(performance(LR_predict2, "auc")@y.values[[1]], 3)
+LSVM_AUC2 <- round(performance(LSVM_predict2, "auc")@y.values[[1]], 3)
+
+#Plot the ROC curves with their corresponding AUC values
+plot(BRF_perform2, col = "green", main = "ROC Curve Analysis")
+plot(LR_perform2, col = "blue", add = TRUE)
+plot(LSVM_perform2, col = "red", add = TRUE)
+
+legend("bottomright", legend = c(paste("BRandom Forest (AUC = ", BRF_AUC2, ")", sep = ""),
+                                 paste("Logistic Regression (AUC = ", LR_AUC2,")", sep =""), 
+                                 paste("Linear SVM (AUC = ", LSVM_AUC2, ")", sep = "")),
+       col = c("green", "blue", "red"), lwd = 2)
+
+```
+
+
+
+```{r}
+
+
+```
 
 
 
