@@ -1378,8 +1378,8 @@ pred_BRF_test <- predict(final_BRF_model, data = test_cleaned)$predictions[,"1"]
 pred_BRF_test_class <- ifelse(pred_BRF_test >= 0.3, 1, 0) # adjust classification threshold
 # Convert probability to factor
 pred_BRF_test_class <- factor(pred_BRF_test_class, levels = c(0,1))
-# Print confusion matrix 
-cat("Balanced Regression Model (BRM) Result", "\n")
+#  Calculate and print the Confusion Matrix and statistics (Recall, Precision, Balanced Accuracy......)
+cat("Balanced Random Forest Model (BRF) Result", "\n")
 cat("\n")
 confusionMatrix(pred_BRF_test_class, test_cleaned$CHDRisk, positive = "1")
 # Compute ROC(AUC) Area Under the Curve
@@ -1400,7 +1400,7 @@ pred_Tprobs <- predict(final_LRmodel, newx = test_features, type = "response")
 # Convert probs to class 
 pred_Tclass <- ifelse(pred_Tprobs >= 0.3, 1, 0) # adjust classification threshold
 pred_Tclass <- factor(pred_Tclass, levels = c("0", "1")) # Make it a factor
-# Calculate and print the Confusion Matrix and statistics (Recall, Precision, and Balanced Accuracy)
+# Calculate and print the Confusion Matrix and statistics (Recall, Precision, Balanced Accuracy......)
 cat("Logistic Regression Model (LR) Result", "\n")
 cat("\n")
 confusionMatrix(pred_Tclass, test_target, positive= "1" )
@@ -1418,14 +1418,13 @@ pred_SVML_test <- attr(predict(final_LSVM_model, test_FADASYN, probability = TRU
 prob_SVM_class_test <- ifelse(pred_SVML_test >= 0.3, 1, 0) # adjust classification threshold
 # Change probability class into factor
 prob_SVM_class_test <- factor(prob_SVM_class_test, levels = c("0", "1"))
-# Generate a Confusion Matrix 
+# Calculate and print the Confusion Matrix and statistics (Recall, Precision, Balanced Accuracy......)
 cat("Support Vector Machine (SVM) Result", "\n")
 cat("\n")
 confusionMatrix(prob_SVM_class_test, test_FADASYN$CHDRisk, positive = "1")
 # ROC(AUC) Area under the curve 
 roc_SVML_test <- roc(test_FADASYN$CHDRisk, pred_SVML_test)
 auc(roc_SVML_test)
-
 ```
 # ROC(AUC) Curve Analyis 
 ```{r}
@@ -1463,11 +1462,47 @@ legend("bottomright", legend = c(paste("BRandom Forest (AUC = ", BRF_AUC2, ")", 
 
 ```
 
-
-
+# Generate model comparison tibble
 ```{r}
+# Models are compared based on important metrics for CHD prediction
+# Recall, Balanced Accuracy, ROC(AUC), and Precision are the chosen metrics for comparison  
+# Construct confusion matrix object from the confusion matrix result of each model above
+BRF_CM <- confusionMatrix(pred_BRF_test_class, test_cleaned$CHDRisk, positive = "1")
+LR_CM <- confusionMatrix(pred_Tclass, test_target, positive= "1" )
+LSVM_CM <- confusionMatrix(prob_SVM_class_test, test_FADASYN$CHDRisk, positive = "1")
 
-
+# Construct ROC(AUC) object from the ROC(AUC) result of each model above 
+BRF_ROC <- auc(rocob_BRF_test)
+LR_ROC <- auc(roc_Tobj)
+LSVM_ROC <- auc(roc_SVML_test)
+# Extract required metrics for comparison (function takes three arguments)
+required_metrics <- function(Confusion_Matrix, ROC_AUC, ML_Model){
+  
+  # Extract only the important metrics from the confusionMatrics()
+  recall_val <- Confusion_Matrix$byClass["Sensitivity"] # Sensitivity (which means recall) is extracted)
+  precision_val <- Confusion_Matrix$byClass["Pos Pred Value"] # Pos Pred Value (which means Precision) is extracted
+  balanced_acc <- Confusion_Matrix$byClass["Balanced Accuracy"] # Balanced Accuracy is extracted 
+  auc_val <- ROC_AUC # AUC value is extracted 
+  
+  # Tibble for clean output 
+  tibble(
+    Machine_Learning_Model = ML_Model,
+    Recall = round(recall_val, 2),
+    Precision = round(precision_val, 2),
+    Balanced_Accuracy = round(balanced_acc, 2),
+    ROC_AUC = round(auc_val, 2)
+  )
+}
+# Call the function to apply and extract the required metrics for each model
+BRF_metrics <- required_metrics(BRF_CM, BRF_ROC, "Balanced Random Forest (BRF)")
+LR_metrics <- required_metrics(LR_CM, LR_ROC, "Logistic Regression (LR)")
+LSVM_metrics <- required_metrics(LSVM_CM, LSVM_ROC, "Linear Support Vector Machine (LSVM)")
+# combine them into one tibble side by side for comparison 
+compare_ML_models <- bind_rows(BRF_metrics, LR_metrics, LSVM_metrics) %>%
+  arrange(desc(Recall)) # descending order by their Recall value 
+# Print the comparison tibble
+print(compare_ML_models)
+# Looking at the output a model with a higher Recall value is selected as the best model for CHD prediction 
 ```
 
 
